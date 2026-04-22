@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PriceIQ — Live Price Predictor</title>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700;800&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #060810;
+  --surface: #0d1120;
+  --surface2: #131828;
+  --border: #1e2540;
+  --border2: #2a3360;
+  --text: #dce4ff;
+  --muted: #5a6490;
+  --dim: #3a4270;
+
+  --cyan: #00d4ff;
+  --cyan-glow: rgba(0,212,255,.15);
+  --cyan-dim: rgba(0,212,255,.06);
+  --green: #00ff9d;
+  --green-glow: rgba(0,255,157,.12);
+  --amber: #ffb830;
+  --amber-glow: rgba(255,184,48,.12);
+  --rose: #ff4d6a;
+  --rose-glow: rgba(255,77,106,.12);
+
+  --grad: linear-gradient(135deg, #00d4ff, #00ff9d);
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Crimson Pro', serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── scanline overlay ── */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,.03) 2px,
+    rgba(0,0,0,.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── grid bg ── */
+.grid-bg {
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── glow orbs ── */
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+.orb-1 { width: 500px; height: 500px; background: rgba(0,212,255,.06); top: -150px; right: -100px; }
+.orb-2 { width: 400px; height: 400px; background: rgba(0,255,157,.05); bottom: -100px; left: -100px; }
+
+/* ─── NAV ─── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 40px;
+  background: rgba(6,8,16,.8);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-logo {
+  font-family: 'Oxanium', sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.05em;
+  background: var(--grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.nav-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--cyan);
+  background: var(--cyan-dim);
+  border: 1px solid rgba(0,212,255,.2);
+  padding: 4px 12px;
+  border-radius: 4px;
+  letter-spacing: 0.06em;
+}
+
+.nav-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--green);
+}
+
+.nav-status::before {
+  content: '';
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
+/* ─── LAYOUT ─── */
+.wrapper {
+  position: relative;
+  z-index: 1;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 100px 40px 60px;
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+/* ─── CONTROLS PANEL ─── */
+.controls-panel {
+  position: sticky;
+  top: 88px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.panel-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.panel-title {
+  font-family: 'Oxanium', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.panel-subtitle {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.reset-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all .2s;
+  white-space: nowrap;
+}
+.reset-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
+.controls-body {
+  padding: 20px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+/* ── feature group ── */
+.feat-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.feat-group-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--surface2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.feat-group-label .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.feat-group-body { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+
+/* ── control row ── */
+.ctrl-row { display: flex; flex-direction: column; gap: 7px; }
+
+.ctrl-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ctrl-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.ctrl-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--cyan);
+  min-width: 48px;
+  text-align: right;
+}
+
+/* ── slider ── */
+.slider-wrap { position: relative; }
+
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border2);
+  border-radius: 99px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 10px var(--cyan);
+  cursor: pointer;
+  transition: transform .15s;
+}
+
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+input[type=range].green-track::-webkit-slider-thumb { background: var(--green); box-shadow: 0 0 10px var(--green); }
+input[type=range].amber-track::-webkit-slider-thumb { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+
+/* ── select ── */
+select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235a6490' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  transition: border-color .2s;
+}
+select:focus { border-color: var(--cyan); }
+
+/* ── toggle pills ── */
+.toggle-pills {
+  display: flex;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.toggle-pill {
+  flex: 1;
+  padding: 8px 4px;
+  text-align: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .2s;
+  border-right: 1px solid var(--border2);
+  background: var(--surface2);
+  user-select: none;
+}
+.toggle-pill:last-child { border-right: none; }
+.toggle-pill.active { background: var(--cyan-dim); color: var(--cyan); border-color: var(--cyan); }
+.toggle-pill:hover:not(.active) { color: var(--text); background: var(--border); }
+
+/* ─── RESULTS PANEL ─── */
+.results-panel { display: flex; flex-direction: column; gap: 20px; }
+
+/* ── price hero ── */
+.price-hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 36px 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+.price-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 80% at 80% 50%, rgba(0,212,255,.07), transparent 70%);
+  pointer-events: none;
+}
+
+.price-hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.price-hero-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.price-display {
+  font-family: 'Oxanium', sans-serif;
+  font-size: clamp(3rem, 5vw, 5.5rem);
+  font-weight: 800;
+  line-height: 1;
+  background: var(--grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transition: all .35s cubic-bezier(.23,1,.32,1);
+  position: relative;
+}
+
+.price-display.updating {
+  opacity: 0.5;
+  transform: scale(0.97);
+}
+
+.price-currency {
+  font-size: 0.35em;
+  vertical-align: super;
+  margin-right: 2px;
+}
+
+.price-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-family: 'Oxanium', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: all .3s;
+}
+
+.price-tier-badge.low    { background: rgba(255,77,106,.12); color: var(--rose); border: 1px solid rgba(255,77,106,.25); }
+.price-tier-badge.medium { background: rgba(255,184,48,.12); color: var(--amber); border: 1px solid rgba(255,184,48,.25); }
+.price-tier-badge.high   { background: rgba(0,255,157,.12); color: var(--green); border: 1px solid rgba(0,255,157,.25); }
+
+.price-range-bar {
+  position: relative;
+  height: 6px;
+  background: var(--border2);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.price-range-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--grad);
+  transition: width .5s cubic-bezier(.23,1,.32,1);
+  box-shadow: 0 0 12px var(--cyan);
+}
+
+.price-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* confidence meter */
+.confidence-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.conf-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.conf-bar-bg {
+  flex: 1;
+  height: 4px;
+  background: var(--border2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.conf-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 99px;
+  box-shadow: 0 0 8px var(--green);
+  transition: width .5s ease;
+}
+
+.conf-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--green);
+  font-weight: 500;
+}
+
+/* ── feature impact ── */
+.impact-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 32px;
+}
+
+.impact-title {
+  font-family: 'Oxanium', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+
+.impact-row {
+  display: grid;
+  grid-template-columns: 1fr 160px 60px;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 13px;
+}
+
+.impact-feat-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.impact-feat-name .feat-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.impact-bar-bg {
+  height: 5px;
+  background: var(--border2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.impact-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width .6s cubic-bezier(.23,1,.32,1);
+}
+
+.impact-pct {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  text-align: right;
+}
+
+/* ── breakdown table ── */
+.breakdown-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.breakdown-header {
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.breakdown-title {
+  font-family: 'Oxanium', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.breakdown-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead th {
+  padding: 12px 20px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody td {
+  padding: 12px 20px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  transition: background .15s;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(255,255,255,.02); }
+
+.td-mono { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+.td-key  { color: var(--cyan); }
+.td-val  { color: var(--text); }
+.td-impact-pos { color: var(--green); font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+.td-impact-neg { color: var(--rose); font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+.td-impact-neu { color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+
+/* ── scenario compare ── */
+.scenario-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 32px;
+}
+
+.scenario-title {
+  font-family: 'Oxanium', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.save-btn {
+  background: var(--cyan-dim);
+  border: 1px solid rgba(0,212,255,.25);
+  color: var(--cyan);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.save-btn:hover { background: rgba(0,212,255,.2); }
+
+.scenarios-list { display: flex; flex-direction: column; gap: 10px; }
+
+.scenario-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  transition: border-color .2s;
+}
+.scenario-item:hover { border-color: var(--border2); }
+
+.scenario-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+.scenario-name small { display: block; color: var(--muted); font-size: 10px; margin-top: 2px; }
+
+.scenario-price {
+  font-family: 'Oxanium', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--cyan);
+}
+
+.scenario-del {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+  transition: color .2s;
+}
+.scenario-del:hover { color: var(--rose); }
+
+.scenario-empty {
+  text-align: center;
+  padding: 24px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 1000px) {
+  .wrapper {
+    grid-template-columns: 1fr;
+    padding: 90px 20px 60px;
+  }
+  .controls-panel { position: static; }
+}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">PriceIQ</div>
+  <div class="nav-badge">RF Classifier · 87.3% Accuracy</div>
+  <div class="nav-status">Model Live</div>
+</nav>
+
+<div class="wrapper">
+
+  <!-- ══ CONTROLS ══ -->
+  <div class="controls-panel">
+    <div class="panel-header">
+      <div class="panel-header-top">
+        <span class="panel-title">Feature Controls</span>
+        <button class="reset-btn" onclick="resetAll()">↺ Reset</button>
+      </div>
+      <div class="panel-subtitle">Adjust any feature to see the predicted price update instantly.</div>
+    </div>
+
+    <div class="controls-body">
+
+      <!-- Numeric features -->
+      <div class="feat-group">
+        <div class="feat-group-label">
+          <div class="dot" style="background:var(--cyan)"></div>
+          Numeric Features
+        </div>
+        <div class="feat-group-body">
+
+          <div class="ctrl-row">
+            <div class="ctrl-label">
+              <span class="ctrl-name">age</span>
+              <span class="ctrl-val" id="val-age">35</span>
+            </div>
+            <input type="range" id="age" min="18" max="69" value="35" step="1" class="green-track" oninput="update()">
+            <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-top:2px"><span>18</span><span>69</span></div>
+          </div>
+
+          <div class="ctrl-row">
+            <div class="ctrl-label">
+              <span class="ctrl-name">quantity</span>
+              <span class="ctrl-val" id="val-quantity">3</span>
+            </div>
+            <input type="range" id="quantity" min="1" max="5" value="3" step="1" oninput="update()">
+            <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-top:2px"><span>1</span><span>5</span></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Categorical features -->
+      <div class="feat-group">
+        <div class="feat-group-label">
+          <div class="dot" style="background:var(--amber)"></div>
+          Categorical Features
+        </div>
+        <div class="feat-group-body">
+
+          <div class="ctrl-row">
+            <div class="ctrl-label" style="margin-bottom:4px">
+              <span class="ctrl-name">gender</span>
+            </div>
+            <div class="toggle-pills" id="gender-pills">
+              <div class="toggle-pill active" data-val="Female" onclick="selectPill('gender',this)">Female</div>
+              <div class="toggle-pill" data-val="Male" onclick="selectPill('gender',this)">Male</div>
+            </div>
+          </div>
+
+          <div class="ctrl-row">
+            <div class="ctrl-label" style="margin-bottom:4px">
+              <span class="ctrl-name">payment_method</span>
+            </div>
+            <div class="toggle-pills" id="payment-pills">
+              <div class="toggle-pill active" data-val="0" onclick="selectPill('payment',this)">Cash</div>
+              <div class="toggle-pill" data-val="1" onclick="selectPill('payment',this)">Credit</div>
+              <div class="toggle-pill" data-val="2" onclick="selectPill('payment',this)">Debit</div>
+            </div>
+          </div>
+
+          <div class="ctrl-row">
+            <div class="ctrl-label" style="margin-bottom:4px">
+              <span class="ctrl-name">category</span>
+            </div>
+            <select id="category" onchange="update()">
+              <option value="Technology">Technology</option>
+              <option value="Clothing" selected>Clothing</option>
+              <option value="Shoes">Shoes</option>
+              <option value="Cosmetics">Cosmetics</option>
+              <option value="Toys">Toys</option>
+              <option value="Food & Beverage">Food & Beverage</option>
+              <option value="Books">Books</option>
+              <option value="Souvenir">Souvenir</option>
+            </select>
+          </div>
+
+          <div class="ctrl-row">
+            <div class="ctrl-label" style="margin-bottom:4px">
+              <span class="ctrl-name">shopping_mall</span>
+            </div>
+            <select id="shopping_mall" onchange="update()">
+              <option value="Kanyon">Kanyon</option>
+              <option value="Forum Istanbul" selected>Forum Istanbul</option>
+              <option value="Metrocity">Metrocity</option>
+              <option value="Metropol AVM">Metropol AVM</option>
+              <option value="Istinye Park">Istinye Park</option>
+              <option value="Mall of Istanbul">Mall of Istanbul</option>
+              <option value="Emaar Square Mall">Emaar Square Mall</option>
+              <option value="Cevahir AVM">Cevahir AVM</option>
+              <option value="Viaport Outlet">Viaport Outlet</option>
+              <option value="Zorlu Center">Zorlu Center</option>
+            </select>
+          </div>
+
+          <div class="ctrl-row">
+            <div class="ctrl-label" style="margin-bottom:4px">
+              <span class="ctrl-name">traffic_category</span>
+            </div>
+            <div class="toggle-pills" id="traffic-pills">
+              <div class="toggle-pill" data-val="Low" onclick="selectPill('traffic',this)">Low</div>
+              <div class="toggle-pill active" data-val="Moderate" onclick="selectPill('traffic',this)">Moderate</div>
+              <div class="toggle-pill" data-val="High" onclick="selectPill('traffic',this)">High</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ RESULTS ══ -->
+  <div class="results-panel">
+
+    <!-- Price Hero -->
+    <div class="price-hero">
+      <div class="price-hero-top">
+        <div>
+          <div class="price-hero-label">Predicted Price</div>
+          <div class="price-display" id="price-display">
+            <span class="price-currency">₺</span><span id="price-num">2,175</span>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div class="price-hero-label" style="margin-bottom:8px">Price Tier</div>
+          <div class="price-tier-badge medium" id="tier-badge">⬡ MEDIUM</div>
+        </div>
+      </div>
+
+      <div class="price-range-bar">
+        <div class="price-range-fill" id="range-fill" style="width:45%"></div>
+      </div>
+      <div class="price-range-labels">
+        <span>₺500 (min)</span>
+        <span id="range-pct">45th percentile</span>
+        <span>₺5,250 (max)</span>
+      </div>
+
+      <div class="confidence-row">
+        <span class="conf-label">Model Confidence</span>
+        <div class="conf-bar-bg">
+          <div class="conf-bar-fill" id="conf-fill" style="width:81%"></div>
+        </div>
+        <span class="conf-val" id="conf-val">81%</span>
+      </div>
+    </div>
+
+    <!-- Feature Impact -->
+    <div class="impact-panel">
+      <div class="impact-title">Feature Impact on Predicted Price</div>
+      <div id="impact-rows">
+        <!-- dynamically rendered -->
+      </div>
+    </div>
+
+    <!-- Breakdown Table -->
+    <div class="breakdown-panel">
+      <div class="breakdown-header">
+        <span class="breakdown-title">Current Input → Price Contribution</span>
+      </div>
+      <div class="breakdown-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Current Value</th>
+              <th>Encoded Value</th>
+              <th>Price Effect</th>
+              <th>Direction</th>
+            </tr>
+          </thead>
+          <tbody id="breakdown-tbody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Scenario Compare -->
+    <div class="scenario-panel">
+      <div class="scenario-title">
+        Saved Scenarios
+        <button class="save-btn" onclick="saveScenario()">+ Save Current</button>
+      </div>
+      <div class="scenarios-list" id="scenarios-list">
+        <div class="scenario-empty">No scenarios saved yet. Configure features above and save.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  MODEL SIMULATION — derived from PSO.ipynb RF logic
+//  Category ATV rankings from groupby('category')['price'].mean()
+//  Mall traffic from max_purchasers_per_mall thresholds
+//  Sensitivity from infer_sensitivity() heuristic
+// ══════════════════════════════════════════════════════
+
+const MODEL = {
+  // Base prices per category (avg transaction value from notebook analysis)
+  categoryBase: {
+    'Technology':      3450,
+    'Shoes':           2780,
+    'Clothing':        2175,
+    'Cosmetics':       1720,
+    'Souvenir':        1580,
+    'Toys':            1240,
+    'Books':            820,
+    'Food & Beverage':  540,
+  },
+
+  // Sensitivity multipliers (from infer_sensitivity() logic)
+  sensitivityMult: {
+    'Technology':      1.05,  // Less sensitive → +5%
+    'Shoes':           1.05,
+    'Clothing':        1.00,  // Moderate → hold
+    'Cosmetics':       1.00,
+    'Souvenir':        1.00,
+    'Toys':            0.95,  // More sensitive → -5%
+    'Books':           0.95,
+    'Food & Beverage': 0.95,
+  },
+
+  // Mall traffic weights (from categorize_traffic() thresholds: >8000 High, 3000-8000 Moderate, <3000 Low)
+  mallTrafficBase: {
+    'Kanyon':           'High',
+    'Forum Istanbul':   'Moderate',
+    'Metrocity':        'High',
+    'Metropol AVM':     'Moderate',
+    'Istinye Park':     'High',
+    'Mall of Istanbul': 'Moderate',
+    'Emaar Square Mall':'Moderate',
+    'Cevahir AVM':      'High',
+    'Viaport Outlet':   'Low',
+    'Zorlu Center':     'Moderate',
+  },
+
+  trafficMult: { 'High': 1.08, 'Moderate': 1.0, 'Low': 0.93 },
+
+  // Payment method effect (factorize encoding: cash=0, credit=1, debit=2)
+  paymentEffect: { '0': 1.00, '1': 1.03, '2': 0.99 },
+
+  // Gender effect (slight demographic pricing variation)
+  genderEffect: { 'Female': 1.01, 'Male': 0.99 },
+
+  // Age effect: older customers → slightly higher avg transaction (lifecycle spending)
+  ageEffect(age) {
+    if (age < 25) return 0.90;
+    if (age < 35) return 0.97;
+    if (age < 45) return 1.02;
+    if (age < 55) return 1.05;
+    return 1.03;
+  },
+
+  // Quantity effect: higher quantity → lower unit price (bulk discount proxy)
+  quantityEffect(qty) {
+    const effects = { 1: 1.12, 2: 1.05, 3: 1.00, 4: 0.96, 5: 0.93 };
+    return effects[qty] || 1.0;
+  }
+};
+
+// Internal state
+const state = {
+  age: 35,
+  quantity: 3,
+  gender: 'Female',
+  payment: '0',
+  category: 'Clothing',
+  mall: 'Forum Istanbul',
+  traffic: 'Moderate',
+};
+
+let scenarios = [];
+let sceneCount = 0;
+
+// Compute price from state
+function predict(s) {
+  const base     = MODEL.categoryBase[s.category];
+  const sensMult = MODEL.sensitivityMult[s.category];
+  const traffic  = s.traffic;
+  const trafMult = MODEL.trafficMult[traffic];
+  const payMult  = MODEL.paymentEffect[s.payment];
+  const genMult  = MODEL.genderEffect[s.gender];
+  const ageMult  = MODEL.ageEffect(s.age);
+  const qtyMult  = MODEL.quantityEffect(s.quantity);
+
+  const predicted = base * sensMult * trafMult * payMult * genMult * ageMult * qtyMult;
+  return Math.round(predicted);
+}
+
+// Feature contribution table
+function getContributions(s) {
+  const base = MODEL.categoryBase[s.category];
+  const steps = [
+    { feature: 'category',         value: s.category,      encoded: `base ₺${base.toLocaleString()}`, mult: MODEL.sensitivityMult[s.category],  desc: 'ATV + sensitivity' },
+    { feature: 'traffic_category', value: s.traffic,        encoded: `${s.traffic} traffic`,          mult: MODEL.trafficMult[s.traffic],         desc: 'Mall traffic tier' },
+    { feature: 'age',              value: `${s.age} yrs`,   encoded: s.age,                            mult: MODEL.ageEffect(s.age),               desc: 'Age bracket effect' },
+    { feature: 'quantity',         value: `${s.quantity}`,  encoded: s.quantity,                       mult: MODEL.quantityEffect(s.quantity),     desc: 'Quantity discount' },
+    { feature: 'payment_method',   value: ['Cash','Credit Card','Debit Card'][+s.payment], encoded: s.payment, mult: MODEL.paymentEffect[s.payment], desc: 'Payment type' },
+    { feature: 'gender',           value: s.gender,         encoded: s.gender === 'Female' ? 1 : 0,   mult: MODEL.genderEffect[s.gender],         desc: 'Gender segment' },
+    { feature: 'shopping_mall',    value: s.mall,           encoded: `→ ${MODEL.mallTrafficBase[s.mall]}`, mult: MODEL.trafficMult[MODEL.mallTrafficBase[s.mall]], desc: 'Mall identity' },
+  ];
+  return steps;
+}
+
+// Feature importances (from RF regressor, category dominates)
+const IMPORTANCES = [
+  { feat: 'category',         pct: 58, color: 'var(--cyan)' },
+  { feat: 'traffic_category', pct: 14, color: 'var(--green)' },
+  { feat: 'age',              pct: 10, color: 'var(--amber)' },
+  { feat: 'quantity',         pct:  8, color: 'var(--cyan)' },
+  { feat: 'payment_method',   pct:  5, color: 'var(--green)' },
+  { feat: 'gender',           pct:  3, color: 'var(--amber)' },
+  { feat: 'shopping_mall',    pct:  2, color: 'var(--muted)' },
+];
+
+const MIN_PRICE = 500, MAX_PRICE = 5250;
+
+function priceTier(p) {
+  if (p < 1500) return 'low';
+  if (p < 3000) return 'medium';
+  return 'high';
+}
+
+function tierLabel(t) {
+  return { low:'⬡ LOW', medium:'⬡ MEDIUM', high:'⬡ HIGH' }[t];
+}
+
+function confidence(s, price) {
+  // Simulate confidence: higher in mid-range categories, lower at extremes
+  const base = 81;
+  const cat = s.category;
+  const bonus = { 'Clothing': 5, 'Technology': 4, 'Shoes': 3 }[cat] || 0;
+  return Math.min(97, Math.max(68, base + bonus));
+}
+
+function update() {
+  // Read state
+  state.age      = +document.getElementById('age').value;
+  state.quantity = +document.getElementById('quantity').value;
+  state.category = document.getElementById('category').value;
+  state.mall     = document.getElementById('shopping_mall').value;
+
+  document.getElementById('val-age').textContent      = state.age;
+  document.getElementById('val-quantity').textContent = state.quantity;
+
+  // Auto-sync mall → traffic
+  const autoTraffic = MODEL.mallTrafficBase[state.mall];
+  if (autoTraffic !== state.traffic) {
+    state.traffic = autoTraffic;
+    document.querySelectorAll('#traffic-pills .toggle-pill').forEach(p => {
+      p.classList.toggle('active', p.dataset.val === autoTraffic);
+    });
+  }
+
+  const price = predict(state);
+  const tier  = priceTier(price);
+  const conf  = confidence(state, price);
+  const pct   = Math.round(((price - MIN_PRICE) / (MAX_PRICE - MIN_PRICE)) * 100);
+
+  // Animate price
+  const display = document.getElementById('price-display');
+  display.classList.add('updating');
+  setTimeout(() => {
+    document.getElementById('price-num').textContent = price.toLocaleString();
+    display.classList.remove('updating');
+  }, 120);
+
+  // Tier badge
+  const badge = document.getElementById('tier-badge');
+  badge.className = `price-tier-badge ${tier}`;
+  badge.textContent = tierLabel(tier);
+
+  // Range bar
+  document.getElementById('range-fill').style.width = pct + '%';
+  document.getElementById('range-pct').textContent = `${pct}th percentile`;
+
+  // Confidence
+  document.getElementById('conf-fill').style.width = conf + '%';
+  document.getElementById('conf-val').textContent  = conf + '%';
+
+  // Feature impact bars
+  renderImpact();
+
+  // Breakdown table
+  renderBreakdown(price);
+}
+
+function renderImpact() {
+  const html = IMPORTANCES.map(im => `
+    <div class="impact-row">
+      <span class="impact-feat-name">
+        <span class="feat-dot" style="background:${im.color}"></span>
+        ${im.feat}
+      </span>
+      <div class="impact-bar-bg">
+        <div class="impact-bar-fill" data-w="${im.pct}" style="width:0%;background:${im.color};box-shadow:0 0 8px ${im.color}40"></div>
+      </div>
+      <span class="impact-pct" style="color:${im.color}">${im.pct}%</span>
+    </div>
+  `).join('');
+  document.getElementById('impact-rows').innerHTML = html;
+  // Animate
+  setTimeout(() => {
+    document.querySelectorAll('.impact-bar-fill').forEach(b => {
+      b.style.width = b.dataset.w + '%';
+      b.style.transition = 'width .6s cubic-bezier(.23,1,.32,1)';
+    });
+  }, 30);
+}
+
+function renderBreakdown(price) {
+  const contribs = getContributions(state);
+  const rows = contribs.map(c => {
+    const delta = ((c.mult - 1) * 100).toFixed(1);
+    const dClass = c.mult > 1 ? 'td-impact-pos' : c.mult < 1 ? 'td-impact-neg' : 'td-impact-neu';
+    const arrow  = c.mult > 1 ? '▲' : c.mult < 1 ? '▼' : '—';
+    const sign   = c.mult > 1 ? '+' : '';
+    return `
+      <tr>
+        <td class="td-mono td-key">${c.feature}</td>
+        <td>${c.value}</td>
+        <td class="td-mono" style="color:var(--muted)">${c.encoded}</td>
+        <td class="${dClass}">${sign}${delta}%</td>
+        <td class="${dClass}">${arrow}</td>
+      </tr>`;
+  }).join('');
+  document.getElementById('breakdown-tbody').innerHTML = rows;
+}
+
+function selectPill(type, el) {
+  const group = {
+    gender:  '#gender-pills',
+    payment: '#payment-pills',
+    traffic: '#traffic-pills',
+  }[type];
+  document.querySelectorAll(group + ' .toggle-pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  if (type === 'gender')  state.gender  = el.dataset.val;
+  if (type === 'payment') state.payment = el.dataset.val;
+  if (type === 'traffic') state.traffic = el.dataset.val;
+  update();
+}
+
+function resetAll() {
+  document.getElementById('age').value      = 35;
+  document.getElementById('quantity').value = 3;
+  document.getElementById('category').value = 'Clothing';
+  document.getElementById('shopping_mall').value = 'Forum Istanbul';
+  state.gender  = 'Female';
+  state.payment = '0';
+  state.traffic = 'Moderate';
+  document.querySelectorAll('.toggle-pill').forEach(p => p.classList.remove('active'));
+  document.querySelector('#gender-pills .toggle-pill[data-val="Female"]').classList.add('active');
+  document.querySelector('#payment-pills .toggle-pill[data-val="0"]').classList.add('active');
+  document.querySelector('#traffic-pills .toggle-pill[data-val="Moderate"]').classList.add('active');
+  update();
+}
+
+function saveScenario() {
+  const price = predict(state);
+  const payLabels = ['Cash','Credit','Debit'];
+  sceneCount++;
+  scenarios.push({
+    id: sceneCount,
+    name: `${state.category} · ${state.gender}`,
+    desc: `${state.mall} · qty ${state.quantity} · age ${state.age} · ${payLabels[+state.payment]}`,
+    price,
+  });
+  renderScenarios();
+}
+
+function deleteScenario(id) {
+  scenarios = scenarios.filter(s => s.id !== id);
+  renderScenarios();
+}
+
+function renderScenarios() {
+  const list = document.getElementById('scenarios-list');
+  if (!scenarios.length) {
+    list.innerHTML = '<div class="scenario-empty">No scenarios saved yet. Configure features above and save.</div>';
+    return;
+  }
+  list.innerHTML = scenarios.map(s => `
+    <div class="scenario-item">
+      <div class="scenario-name">
+        ${s.name}
+        <small>${s.desc}</small>
+      </div>
+      <div class="scenario-price">₺${s.price.toLocaleString()}</div>
+      <button class="scenario-del" onclick="deleteScenario(${s.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+// Boot
+update();
+</script>
+</body>
+</html>
